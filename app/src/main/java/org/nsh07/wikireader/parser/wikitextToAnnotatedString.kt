@@ -1394,7 +1394,7 @@ fun String.toWikitextAnnotatedString(
             }
             i++
         }
-        }
+    }
     } finally {
         WikitextParserState.recursionDepth.set(currentDepth)
     }
