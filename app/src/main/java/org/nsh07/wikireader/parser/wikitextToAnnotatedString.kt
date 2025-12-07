@@ -355,7 +355,7 @@ fun String.toWikitextAnnotatedString(
 
                 '{' ->
                     if (input.getOrNull(i + 1) == '{') {
-                            val currSubstring =
+                        val currSubstring =
                             substringMatchingParen('{', '}', i).substringBeforeLast("}}")
                         when {
                             refTemplates.fastAny { item ->
