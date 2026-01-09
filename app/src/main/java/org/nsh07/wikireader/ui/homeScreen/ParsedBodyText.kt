@@ -75,19 +75,35 @@ fun ParsedBodyText(
                         background = background
                     )
                 }
-            } else if (it.startsWith("<math")) {
+            } else if (it.toString().lowercase().startsWith("<math")) {
+                // Extract LaTeX content properly - between opening tag and closing tag
+                val fullText = it.toString()
+                val openTagEnd = fullText.indexOf('>')
+                val closeTagStart = fullText.lowercase().indexOf("</math>")
+                val latexContent = when {
+                    openTagEnd != -1 && closeTagStart > openTagEnd -> 
+                        fullText.substring(openTagEnd + 1, closeTagStart)
+                    openTagEnd != -1 -> 
+                        fullText.substring(openTagEnd + 1)
+                    else -> fullText
+                }
+                
                 if (renderMath) {
                     EquationImage(
                         context = context,
                         dpi = dpi,
-                        latex = remember { it.toString().substringAfter('>') },
+                        latex = remember { latexContent },
                         fontSize = fontSize,
                         darkTheme = darkTheme
                     )
                 } else {
+                    val converted = try {
+                        LaTeX2Unicode.convert(latexContent).replace(' ', nbsp)
+                    } catch (e: Exception) {
+                        latexContent // Fallback to raw LaTeX if conversion fails
+                    }
                     Text(
-                        text = LaTeX2Unicode.convert(it.toString())
-                            .replace(' ', nbsp).substringAfter('>'),
+                        text = converted,
                         fontFamily = FontFamily.Serif,
                         fontSize = (fontSize + 4).sp,
                         lineHeight = (24 * (fontSize / 16.0) + 4).toInt().sp,

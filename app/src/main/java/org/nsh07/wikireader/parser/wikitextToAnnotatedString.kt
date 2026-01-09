@@ -305,21 +305,31 @@ fun String.toWikitextAnnotatedString(
                             i += 7 + curr.length + 7
                         }
 
-                        currSubstring.startsWith("<math>") -> {
-                            val curr = currSubstring.substringBefore("</math>").substringAfter('>')
-                            withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
-                                append(LaTeX2Unicode.convert(curr).replace(' ', nbsp))
-                            }
-                            i += 6 + curr.length + 6
-                        }
+                        currSubstring.lowercase().startsWith("<math") -> {
+                            val lowerSubstring = currSubstring.lowercase()
+                            val closeIndex = lowerSubstring.indexOf("</math>")
+                            if (closeIndex != -1) {
+                                val openTag = currSubstring.substringBefore('>')
+                                val content = currSubstring.substring(openTag.length + 1, closeIndex)
+                                val isDisplay = openTag.lowercase().contains("display")
 
-                        currSubstring.startsWith("<math display") -> {
-                            val curr = currSubstring.substringBefore("</math>").substringAfter('>')
-                            append("\t\t")
-                            withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
-                                append(LaTeX2Unicode.convert(curr).replace(' ', nbsp))
+                                if (isDisplay) {
+                                    append("\t\t")
+                                }
+                                
+                                val converted = try {
+                                    LaTeX2Unicode.convert(content).replace(' ', nbsp)
+                                } catch (e: Exception) {
+                                    content // Fallback to raw LaTeX if conversion fails
+                                }
+                                
+                                withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
+                                    append(converted)
+                                }
+                                i += closeIndex + 6 // +6 because loop will add +1
+                            } else {
+                                append(input[i])
                             }
-                            i += currSubstring.substringBefore('>').length + curr.length + "</math>".length
                         }
 
                         currSubstring.startsWith("<blockquote") -> {
