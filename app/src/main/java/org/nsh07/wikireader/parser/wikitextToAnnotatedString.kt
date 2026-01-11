@@ -44,6 +44,11 @@ import kotlin.text.Typography.nbsp
 import kotlin.text.Typography.ndash
 
 private const val MAGIC_SEP = "{{!}}"
+private const val MAX_WIKITEXT_RECURSION_DEPTH = 64
+
+private object WikitextParserState {
+    val recursionDepth: ThreadLocal<Int> = ThreadLocal.withInitial { 0 }
+}
 
 /**
  * Converts Wikitext source code into an [AnnotatedString] that can be rendered by [androidx.compose.material3.Text]
@@ -57,39 +62,47 @@ fun String.toWikitextAnnotatedString(
     inIndentCode: Boolean = false,
     showRef: (String) -> Unit,
 ): AnnotatedString {
-    val hrChar = '─'
-    val input = this
-    var i = 0
-    var number = 1 // Count for numbered lists
-
-    var italic = false
-    var bold = false
-
-    val twas: String.() -> AnnotatedString = {
-        this.toWikitextAnnotatedString(
-            colorScheme,
-            typography,
-            loadPage,
-            fontSize,
-            showRef = showRef
-        )
+    val currentDepth = WikitextParserState.recursionDepth.get()
+    if (currentDepth >= MAX_WIKITEXT_RECURSION_DEPTH) {
+        // Fallback: avoid runaway recursion on pathological or malformed wikitext
+        return AnnotatedString(this)
     }
 
-    val twasNoNewline: String.() -> AnnotatedString = {
-        this.toWikitextAnnotatedString(
-            colorScheme,
-            typography,
-            loadPage,
-            fontSize,
-            newLine = false,
-            showRef = showRef
-        )
-    }
+    WikitextParserState.recursionDepth.set(currentDepth + 1)
+    try {
+        val hrChar = '─'
+        val input = this
+        var i = 0
+        var number = 1 // Count for numbered lists
 
-    return buildAnnotatedString {
-        while (i < input.length) {
-            if (input[i] != '#') number = 1
-            when (input[i]) {
+        var italic = false
+        var bold = false
+
+        val twas: String.() -> AnnotatedString = {
+            this.toWikitextAnnotatedString(
+                colorScheme,
+                typography,
+                loadPage,
+                fontSize,
+                showRef = showRef
+            )
+        }
+
+        val twasNoNewline: String.() -> AnnotatedString = {
+            this.toWikitextAnnotatedString(
+                colorScheme,
+                typography,
+                loadPage,
+                fontSize,
+                newLine = false,
+                showRef = showRef
+            )
+        }
+
+        return buildAnnotatedString {
+            while (i < input.length) {
+                if (input[i] != '#') number = 1
+                when (input[i]) {
                 ' ' ->
                     if ((getOrNull(i - 1) == '\n' || i == 0) && !inIndentCode) {
                         val curr = substring(i + 1).substringBefore('\n')
@@ -292,21 +305,31 @@ fun String.toWikitextAnnotatedString(
                             i += 7 + curr.length + 7
                         }
 
-                        currSubstring.startsWith("<math>") -> {
-                            val curr = currSubstring.substringBefore("</math>").substringAfter('>')
-                            withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
-                                append(LaTeX2Unicode.convert(curr).replace(' ', nbsp))
-                            }
-                            i += 6 + curr.length + 6
-                        }
+                        currSubstring.lowercase().startsWith("<math") -> {
+                            val lowerSubstring = currSubstring.lowercase()
+                            val closeIndex = lowerSubstring.indexOf("</math>")
+                            if (closeIndex != -1) {
+                                val openTag = currSubstring.substringBefore('>')
+                                val content = currSubstring.substring(openTag.length + 1, closeIndex)
+                                val isDisplay = openTag.lowercase().contains("display")
 
-                        currSubstring.startsWith("<math display") -> {
-                            val curr = currSubstring.substringBefore("</math>").substringAfter('>')
-                            append("\t\t")
-                            withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
-                                append(LaTeX2Unicode.convert(curr).replace(' ', nbsp))
+                                if (isDisplay) {
+                                    append("\t\t")
+                                }
+                                
+                                val converted = try {
+                                    LaTeX2Unicode.convert(content).replace(' ', nbsp)
+                                } catch (e: Exception) {
+                                    content // Fallback to raw LaTeX if conversion fails
+                                }
+                                
+                                withStyle(SpanStyle(fontFamily = FontFamily.Serif)) {
+                                    append(converted)
+                                }
+                                i += closeIndex + 6 // +6 because loop will add +1
+                            } else {
+                                append(input[i])
                             }
-                            i += currSubstring.substringBefore('>').length + curr.length + "</math>".length
                         }
 
                         currSubstring.startsWith("<blockquote") -> {
@@ -530,7 +553,7 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{abbr", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|').substringBefore('|')
+                                val curr = currSubstring.substringAfter('|', "").substringBefore('|')
                                 append(curr.twas())
                             }
 
@@ -575,19 +598,19 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{val", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|').substringBefore('|')
+                                val curr = currSubstring.substringAfter('|', "").substringBefore('|')
                                 append(curr.twas())
                             }
 
                             currSubstring.startsWith("{{var", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 append("''$curr''".twas())
                             }
 
                             arrayOf("{{small", "{{smaller", "{{petit", "{{hw-small", "{{sma").any {
                                 currSubstring.startsWith(it, ignoreCase = true)
                             } -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 withStyle(SpanStyle(fontSize = (fontSize - 2).sp)) {
                                     append(curr.twas())
                                 }
@@ -652,7 +675,7 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{dfn", true) -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 append("'''$curr'''".twas())
                             }
 
@@ -706,7 +729,8 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{format price", true) -> {
-                                val curr = currSubstring.substringAfter('|').substringBefore('|')
+                                val curr =
+                                    currSubstring.substringAfter('|', "").substringBefore('|')
                                 append(
                                     if (curr.contains('.')) curr.toDoubleOrNull()
                                         ?.formatToHumanReadable() ?: curr.twas()
@@ -838,13 +862,13 @@ fun String.toWikitextAnnotatedString(
 
                             currSubstring.startsWith("{{US$", true) -> {
                                 if (currSubstring.contains('|')) {
-                                    val curr = currSubstring.substringAfter('|')
+                                    val curr = currSubstring.substringAfter('|', "")
                                     append("US$${curr.twas()}")
                                 } else append("US$")
                             }
 
                             currSubstring.startsWith("{{hatnote", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|').replace('\n', ' ')
+                                val curr = currSubstring.substringAfter('|', "").replace('\n', ' ')
                                 append("''$curr''".twas())
                             }
 
@@ -957,18 +981,18 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{rp", true) -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 append("<sup>:$curr </sup>".twas())
                             }
 
                             currSubstring.startsWith("{{isbn", true) -> {
-                                val curr = currSubstring.substringAfter('|').split('|')
+                                val curr = currSubstring.substringAfter('|', "").split('|')
                                     .filterNot { it.contains('=') }.joinToString()
                                 append("[[ISBN]] $curr".twas())
                             }
 
                             currSubstring.startsWith("{{sfrac") -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 val splitList = curr.split('|')
                                 when (splitList.size) {
                                     3 -> append("${splitList[0]}<sup>${splitList[1]}</sup>/<sub>${splitList[2]}</sub>".twas())
@@ -992,7 +1016,8 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{unichar", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|').substringBefore('|')
+                                val curr =
+                                    currSubstring.substringAfter('|', "").substringBefore('|')
                                 append("<code>U+$curr</code> ".twas())
                                 try {
                                     append(Character.toString(curr.toInt(16)))
@@ -1001,7 +1026,7 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{char", ignoreCase = true) -> {
-                                append(currSubstring.substringAfter('|').twas())
+                                append(currSubstring.substringAfter('|', "").twas())
                             }
 
                             currSubstring.startsWith("{{Nihongo", ignoreCase = true) -> {
@@ -1029,7 +1054,7 @@ fun String.toWikitextAnnotatedString(
                             }
 
                             currSubstring.startsWith("{{noflag", ignoreCase = true) -> {
-                                val curr = currSubstring.substringAfter('|')
+                                val curr = currSubstring.substringAfter('|', "")
                                 append(curr.twas())
                             }
 
@@ -1379,6 +1404,9 @@ fun String.toWikitextAnnotatedString(
             }
             i++
         }
+    }
+    } finally {
+        WikitextParserState.recursionDepth.set(currentDepth)
     }
 }
 

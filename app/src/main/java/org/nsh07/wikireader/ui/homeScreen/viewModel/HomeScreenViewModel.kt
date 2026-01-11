@@ -798,23 +798,31 @@ class HomeScreenViewModel(
                     stack--
 
                 if (wikitext[i] == '<') {
-                    var currSubstring = wikitext.substring(i, min(i + 16, wikitext.length))
-                    if (currSubstring.startsWith("<math display")) {
-                        currSubstring = wikitext.substring(i).substringBefore("</math>")
-                        out.add(
-                            curr.toWikitextAnnotatedString(
-                                colorScheme = colorScheme,
-                                typography = typography,
-                                loadPage = ::loadPage,
-                                fontSize = preferencesState.value.fontSize,
-                                showRef = {
+                    var currSubstring = wikitext.substring(i, min(i + 20, wikitext.length))
+                    // Check for display math (case-insensitive)
+                    if (currSubstring.lowercase().startsWith("<math") && 
+                        currSubstring.substringBefore('>').lowercase().contains("display")) {
+                        currSubstring = wikitext.substring(i)
+                        val closeIndex = currSubstring.lowercase().indexOf("</math>")
+                        if (closeIndex != -1) {
+                            currSubstring = wikitext.substring(i, i + closeIndex + 7)
+                            out.add(
+                                curr.toWikitextAnnotatedString(
+                                    colorScheme = colorScheme,
+                                    typography = typography,
+                                    loadPage = ::loadPage,
+                                    fontSize = preferencesState.value.fontSize,
+                                    showRef = {
 
-                                }
+                                    }
+                                )
                             )
-                        )
-                        out.add(AnnotatedString(currSubstring))
-                        i += currSubstring.length + 7
-                        curr = ""
+                            out.add(AnnotatedString(currSubstring))
+                            i += currSubstring.length
+                            curr = ""
+                        } else {
+                            curr += wikitext[i]
+                        }
                     } else if (currSubstring.startsWith("<gallery")) {
                         currSubstring = wikitext.substring(i).substringBefore("</gallery>")
                         out.add(
