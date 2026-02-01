@@ -838,7 +838,7 @@ fun ArticleFeed(
                                                                 it.titles?.normalized?.let { title ->
                                                                     Modifier.sharedBounds(
                                                                         sharedContentState = rememberSharedContentState(
-                                                                            "otd-$i-title-$title"
+                                                                            "otd-title-$title"
                                                                         ),
                                                                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                                                                         zIndexInOverlay = 1f
