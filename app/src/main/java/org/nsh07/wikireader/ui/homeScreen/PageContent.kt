@@ -144,7 +144,7 @@ fun PageContent(
                                     modifier = Modifier
                                         .sharedBounds(
                                             sharedContentState = rememberSharedContentState(
-                                                "article-desc-$photoDesc"
+                                                "tfa-desc-$photoDesc"
                                             ),
                                             animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                                             zIndexInOverlay = 1f
