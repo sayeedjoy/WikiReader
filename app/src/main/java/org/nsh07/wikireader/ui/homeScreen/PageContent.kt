@@ -127,7 +127,7 @@ fun PageContent(
                                 modifier = Modifier
                                     .sharedBounds(
                                         sharedContentState = rememberSharedContentState(
-                                            "article-title-${content.title}"
+                                            "tfa-title-${content.title}"
                                         ),
                                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                                         zIndexInOverlay = 1f
