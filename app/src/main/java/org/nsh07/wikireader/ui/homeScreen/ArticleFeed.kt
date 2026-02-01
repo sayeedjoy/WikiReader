@@ -444,7 +444,7 @@ fun ArticleFeed(
                                                             feedContent.mostReadArticles[i].originalImage?.source?.let { src ->
                                                                 Modifier.sharedBounds(
                                                                     sharedContentState = rememberSharedContentState(
-                                                                        "trending-$page-$i-image-$src"
+                                                                        "trending-image-$src"
                                                                     ),
                                                                     animatedVisibilityScope = LocalNavAnimatedContentScope.current
                                                                 )
